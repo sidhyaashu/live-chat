@@ -8,7 +8,7 @@ export function ChatLayout({ children }: { children: ReactNode }) {
     const [showCreateGroup, setShowCreateGroup] = useState(false);
 
     return (
-        <div className="flex h-[calc(100vh-64px)] overflow-hidden">
+        <div className="flex h-full overflow-hidden">
             {/* Sidebar: hidden on mobile, always visible on md+ */}
             <Sidebar onOpenCreateGroup={() => setShowCreateGroup(true)} />
             {/* Chat area: takes full width on mobile, rest on md+ */}

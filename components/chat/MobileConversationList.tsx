@@ -3,14 +3,15 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { Search, Plus, Users, MessageSquare, UserRound, Settings } from 'lucide-react';
+import { Search, Plus, Users, MessageSquare, UserRound, Settings, Bell, Check, X, Clock } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { CreateGroupModal } from './CreateGroupModal';
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
 import { formatConversationTime } from '@/lib/utils';
+import { Id } from '@/convex/_generated/dataModel';
 
-type Tab = 'chats' | 'people';
+type Tab = 'chats' | 'people' | 'inbox';
 
 export function MobileConversationList() {
     const [searchTerm, setSearchTerm] = useState('');
@@ -19,6 +20,11 @@ export function MobileConversationList() {
 
     const conversations = useQuery(api.conversations.getConversations);
     const users = useQuery(api.users.searchUsers, { searchTerm });
+    const pendingRequests = useQuery(api.messageRequests.getPendingIncoming);
+    const pendingCount = useQuery(api.messageRequests.getPendingCount);
+    const sendRequest = useMutation(api.messageRequests.sendRequest);
+    const acceptRequest = useMutation(api.messageRequests.acceptRequest);
+    const declineRequest = useMutation(api.messageRequests.declineRequest);
     const createConversation = useMutation(api.conversations.createOrGetConversation);
     const router = useRouter();
 
@@ -87,6 +93,19 @@ export function MobileConversationList() {
                         <UserRound className="h-4 w-4 inline mr-1.5 -mt-0.5" />
                         People
                     </button>
+                    <button
+                        onClick={() => setActiveTab('inbox')}
+                        className={`flex-1 py-2.5 text-sm font-medium border-b-2 transition relative ${activeTab === 'inbox' ? 'border-primary text-primary' : 'border-transparent text-zinc-500'
+                            }`}
+                    >
+                        <Bell className="h-4 w-4 inline mr-1.5 -mt-0.5" />
+                        Inbox
+                        {pendingCount !== undefined && pendingCount > 0 && (
+                            <span className="absolute top-2 right-4 bg-primary text-primary-foreground text-[9px] font-bold min-w-[14px] h-3.5 px-0.5 flex items-center justify-center rounded-full leading-none">
+                                {pendingCount > 99 ? '99+' : pendingCount}
+                            </span>
+                        )}
+                    </button>
                 </div>
             )}
 
@@ -107,33 +126,102 @@ export function MobileConversationList() {
                                 ))}
                             </div>
                         )}
-                        {users?.map(user => (
-                            <button
-                                key={user._id}
-                                onClick={() => handleCreateChat(user._id)}
-                                className="w-full flex items-center gap-3 p-3 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg transition"
-                            >
-                                <div className="relative shrink-0">
-                                    <img
-                                        src={user.imageUrl || '/placeholder-user.png'}
-                                        alt={user.name}
-                                        className="h-12 w-12 rounded-full object-cover"
-                                    />
-                                    {user.isOnline && (
-                                        <span className="absolute bottom-0 right-0 h-3 w-3 bg-green-500 border-2 border-white dark:border-zinc-900 rounded-full" />
-                                    )}
-                                </div>
-                                <div className="text-left min-w-0">
-                                    <div className="font-semibold truncate">{user.name}</div>
-                                    <div className="text-sm text-zinc-500 truncate">
-                                        {user.isOnline ? (
-                                            <span className="text-green-600 dark:text-green-400">● Online</span>
-                                        ) : (
-                                            user.email
+                        {users?.map(user => {
+                            const existing = conversations?.find((c: any) => !c.isGroup && c.otherUser?._id === user._id);
+                            return (
+                                <div
+                                    key={user._id}
+                                    className="w-full flex items-center gap-3 p-3 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg transition"
+                                >
+                                    <div className="relative shrink-0">
+                                        <img
+                                            src={user.imageUrl || '/placeholder-user.png'}
+                                            alt={user.name}
+                                            className="h-12 w-12 rounded-full object-cover"
+                                        />
+                                        {user.isOnline && (
+                                            <span className="absolute bottom-0 right-0 h-3 w-3 bg-green-500 border-2 border-white dark:border-zinc-900 rounded-full" />
                                         )}
                                     </div>
+                                    <div className="flex-1 text-left min-w-0">
+                                        <div className="font-semibold truncate">{user.name}</div>
+                                        <div className="text-sm text-zinc-500 truncate">
+                                            {user.isOnline ? (
+                                                <span className="text-green-600 dark:text-green-400">● Online</span>
+                                            ) : (
+                                                user.email
+                                            )}
+                                        </div>
+                                    </div>
+                                    {existing ? (
+                                        <button
+                                            onClick={() => router.push(`/conversations/${existing._id}`)}
+                                            className="gh-btn text-xs py-1.5 px-3"
+                                        >
+                                            Chat
+                                        </button>
+                                    ) : (
+                                        <MobileRequestButton userId={user._id} onSend={sendRequest} />
+                                    )}
                                 </div>
-                            </button>
+                            );
+                        })}
+                    </div>
+                ) : effectiveTab === 'inbox' ? (
+                    <div className="divide-y divide-border">
+                        {pendingRequests === undefined && (
+                            <div className="space-y-1 p-2">
+                                {[1, 2].map(i => (
+                                    <div key={i} className="flex items-center gap-3 p-3 animate-pulse">
+                                        <div className="h-10 w-10 rounded-full bg-zinc-200 dark:bg-zinc-700 shrink-0" />
+                                        <div className="flex-1 space-y-2">
+                                            <div className="h-3 bg-zinc-200 dark:bg-zinc-700 rounded w-1/2" />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {pendingRequests?.length === 0 && (
+                            <div className="flex flex-col items-center justify-center py-16 px-6 gap-3 text-center">
+                                <Bell className="h-8 w-8 text-zinc-300" />
+                                <p className="text-sm font-medium">No requests</p>
+                                <p className="text-xs text-zinc-500">Incoming message requests appear here</p>
+                            </div>
+                        )}
+                        {pendingRequests?.map(req => (
+                            <div key={req._id} className="flex items-center gap-3 px-4 py-4 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+                                <div className="relative shrink-0 h-10 w-10">
+                                    <img
+                                        src={req.sender?.imageUrl || '/placeholder-user.png'}
+                                        alt={req.sender?.name}
+                                        className="h-10 w-10 rounded-full object-cover"
+                                    />
+                                    {req.sender?.isOnline && (
+                                        <span className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 border-2 border-white dark:border-zinc-900 rounded-full" />
+                                    )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold truncate">{req.sender?.name ?? 'Unknown'}</p>
+                                    <p className="text-xs text-zinc-500">wants to message you</p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        onClick={async () => {
+                                            const convId = await acceptRequest({ requestId: req._id });
+                                            if (convId) router.push(`/conversations/${convId}`);
+                                        }}
+                                        className="h-9 w-9 rounded-full bg-green-500 text-white flex items-center justify-center shadow-sm"
+                                    >
+                                        <Check className="h-5 w-5" />
+                                    </button>
+                                    <button
+                                        onClick={() => declineRequest({ requestId: req._id })}
+                                        className="h-9 w-9 rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 flex items-center justify-center"
+                                    >
+                                        <X className="h-5 w-5" />
+                                    </button>
+                                </div>
+                            </div>
                         ))}
                     </div>
                 ) : (
@@ -221,5 +309,48 @@ export function MobileConversationList() {
 
             {showCreateGroup && <CreateGroupModal onClose={() => setShowCreateGroup(false)} />}
         </div>
+    );
+}
+
+function MobileRequestButton({
+    userId,
+    onSend,
+}: {
+    userId: string;
+    onSend: (args: { toUserId: Id<"users"> }) => Promise<any>;
+}) {
+    const [loading, setLoading] = useState(false);
+    const status = useQuery(api.messageRequests.getRequestStatus, { otherUserId: userId as Id<"users"> });
+
+    if (status === undefined) return <div className="h-6 w-16 bg-muted rounded animate-pulse" />;
+
+    if (status?.status === 'pending' && status.direction === 'sent') {
+        return (
+            <span className="flex items-center gap-1 text-[11px] text-zinc-500 py-1 px-2 bg-zinc-100 dark:bg-zinc-800 rounded-full">
+                <Clock className="h-3 w-3" /> Pending
+            </span>
+        );
+    }
+    if (status?.status === 'accepted') {
+        return (
+            <span className="text-[11px] text-green-600 font-medium flex items-center gap-1">
+                <Check className="h-3 w-3" /> Friends
+            </span>
+        );
+    }
+
+    return (
+        <button
+            disabled={loading}
+            onClick={async (e) => {
+                e.stopPropagation();
+                setLoading(true);
+                await onSend({ toUserId: userId as Id<"users"> });
+                setLoading(false);
+            }}
+            className="gh-btn gh-btn-blue text-xs py-1.5 px-3 disabled:opacity-50 shadow-sm"
+        >
+            {loading ? '…' : 'Request'}
+        </button>
     );
 }

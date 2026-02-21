@@ -281,6 +281,7 @@
 }
 .gh-btn-blue:hover {
   filter: brightness(1.08);
+  color: #000;
 }
 .gh-btn-danger {
   background: var(--gh-danger);

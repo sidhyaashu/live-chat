@@ -5,7 +5,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useUser } from '@clerk/nextjs';
 import { UserButton } from '@clerk/nextjs';
-import { Camera, Save, User } from 'lucide-react';
+import { Camera, Save, User, ChevronLeft } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ProfilePage() {
@@ -37,9 +37,15 @@ export default function ProfilePage() {
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
             {/* Header */}
-            <div className="bg-white dark:bg-zinc-900 border-b px-6 py-4 flex items-center gap-4">
-                <Link href="/" className="text-sm text-primary hover:underline">← Back to Chat</Link>
-                <h1 className="text-xl font-bold flex-1">Profile Settings</h1>
+            <div className="bg-white dark:bg-zinc-900 border-b px-4 py-3 flex items-center gap-3 sticky top-0 z-10 shadow-sm">
+                <Link
+                    href="/"
+                    className="p-2 -ml-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors flex items-center justify-center"
+                    aria-label="Back to Chat"
+                >
+                    <ChevronLeft className="h-6 w-6 text-primary" />
+                </Link>
+                <h1 className="text-lg font-bold flex-1">Profile Settings</h1>
             </div>
 
             <div className="max-w-lg mx-auto px-4 py-8 space-y-6">

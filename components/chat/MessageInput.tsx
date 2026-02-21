@@ -191,7 +191,7 @@ export function MessageInput({ conversationId, replyTo, onCancelReply }: Message
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isUploading}
-                    className="h-8 w-8 rounded-md border border-border bg-muted hover:bg-secondary flex items-center justify-center transition-colors disabled:opacity-40 shrink-0"
+                    className="h-10 w-10 rounded-md border border-border bg-muted hover:bg-secondary flex items-center justify-center transition-colors disabled:opacity-40 shrink-0"
                     aria-label="Attach image"
                 >
                     <Paperclip className="h-4 w-4 text-muted-foreground" />
@@ -207,7 +207,7 @@ export function MessageInput({ conversationId, replyTo, onCancelReply }: Message
                     placeholder={imageFile ? 'Add a caption…' : 'Type a message…'}
                     disabled={isUploading}
                     aria-label="Message"
-                    className="flex-1 h-8 px-3 py-0 text-sm bg-muted border border-border rounded-md placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring transition-shadow disabled:opacity-50"
+                    className="flex-1 h-10 px-3 py-0 text-sm bg-muted border border-border rounded-md placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring transition-shadow disabled:opacity-50"
                 />
 
                 {/* Send */}
@@ -215,14 +215,14 @@ export function MessageInput({ conversationId, replyTo, onCancelReply }: Message
                     type="submit"
                     disabled={!canSend}
                     aria-label="Send"
-                    className={`h-8 px-3 rounded-md text-sm font-medium flex items-center gap-1.5 transition-colors disabled:opacity-40 shrink-0 ${canSend
-                            ? 'bg-primary text-primary-foreground hover:opacity-90'
-                            : 'bg-muted text-muted-foreground cursor-not-allowed'
+                    className={`h-10 px-4 rounded-md text-sm font-medium flex items-center gap-1.5 transition-colors disabled:opacity-40 shrink-0 ${canSend
+                        ? 'bg-primary text-primary-foreground hover:opacity-90'
+                        : 'bg-muted text-muted-foreground cursor-not-allowed'
                         }`}
                 >
                     {isUploading
-                        ? <div className="h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        : <><Send className="h-3.5 w-3.5" /><span className="hidden sm:inline">Send</span></>
+                        ? <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        : <><Send className="h-4 w-4" /><span className="hidden sm:inline">Send</span></>
                     }
                 </button>
             </form>
