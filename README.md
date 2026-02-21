@@ -27,6 +27,8 @@
 | Feature | Description |
 |---|---|
 | 🔐 **Authentication** | Clerk-powered email + social login with avatar display |
+| 🛡 **Message Requests** | Privacy-first "Accept/Decline" flow for new contacts |
+| 🏠 **Premium Landing** | Modern, animated landing page with product demo widget |
 | 👥 **User Discovery** | Search all registered users by name in real time |
 | 💬 **Direct Messages** | One-on-one private conversations |
 | 👫 **Group Chats** | Create groups, manage members, rename, upload group avatar |
@@ -36,13 +38,14 @@
 | 📖 **Read Receipts** | ✓ Sent / ✓✓ Read (blue) powered by `lastReadTime` |
 | 🔗 **Link Previews** | OpenGraph card auto-generated for any URL in a message |
 | ♾️ **Infinite Scroll** | Cursor-based pagination via `usePaginatedQuery` + IntersectionObserver |
-| 🕐 **Smart Timestamps** | Time-only today, date+time same year, full date+year otherwise |
+| ❶ **Inbox Badge** | Real-time notification badge for pending message requests |
 | 🟢 **Online Presence** | Real-time green indicators; clears on tab close |
 | ✍️ **Typing Indicators** | Animated dots with name(s); clears after 2 s of inactivity |
 | 🔔 **Unread Badges** | Real-time badge count; clears on conversation open |
 | 🗑 **Soft Delete** | "This message was deleted" — record preserved for integrity |
 | 😀 **Reactions** | 6 emoji reactions with toggle & count per message |
-| 📱 **Responsive** | Desktop sidebar + chat; Mobile full-screen with back button |
+| 📱 **Responsive** | Mobile-first design with dedicated bottom-bar navigation |
+| 🌙 **Dark Mode** | Full system-sync and manual toggle support |
 | ⬇️ **Auto-scroll** | Snaps to latest, shows "↓ New messages" button if scrolled up |
 | 💀 **Skeleton Loaders** | Every loading state has a polished animated skeleton |
 | ⚠️ **Error + Retry** | Failed sends show a dismissable banner with a Retry action |
@@ -85,9 +88,9 @@
                      │                                        │
                      │  ┌───────────┐  ┌──────────────────┐  │
                      │  │  queries  │  │    mutations     │  │
-                     │  │  messages │  │  send (image,    │  │
-                     │  │  .list    │  │  reply, link     │  │
-                     │  │  (paged)  │  │  preview)        │  │
+                     │  │  messages │  │  send, reply,    │  │
+                     │  │  .list    │  │  link-preview,   │  │
+                     │  │  (paged)  │  │  request         │  │
                      │  └───────────┘  └──────────────────┘  │
                      │  ┌────────────────────────────────┐   │
                      │  │   internalAction               │   │
@@ -143,6 +146,7 @@ live-chat/
 │   ├── schema.ts                 # Full data model
 │   ├── messages.ts               # Paginated query, send, image upload, link preview
 │   ├── conversations.ts          # CRUD, group management, read status
+│   ├── messageRequests.ts        # Inbox logic (send, accept, decline)
 │   ├── users.ts                  # User sync, search, presence
 │   ├── presence.ts               # Typing & online indicators
 │   ├── reactions.ts              # Emoji reactions
@@ -198,6 +202,11 @@ presence: {
     userId, isTyping: boolean,
     conversationId?,
     lastActive: number,
+}
+
+messageRequests: {
+    fromUserId, toUserId,
+    status: "pending" | "accepted" | "declined",
 }
 ```
 
@@ -340,6 +349,23 @@ export const list = query({
 ```
 
 On the client, an `IntersectionObserver` on the top sentinel calls `loadMore(30)` when the user scrolls to the top.
+
+### Premium Landing Page
+
+The `app/page.tsx` features a custom-built, typography-first landing page:
+- **Responsive design**: Uses `clamp()` for fluid typography and media-query based grid layouts.
+- **Animations**: CSS keyframes for `fadeUp`, `slideIn`, and `bounce` (typing indicators).
+- **Interactive Demo**: A self-playing chat widget that enters view via `IntersectionObserver`.
+
+### Message Requests (Privacy-First)
+
+Unlike traditional chat apps where anyone can message you, LiveChat implements an **Inbox** flow:
+1. **Request**: Find a user and click "Request". This creates a `pending` record in `messageRequests`.
+2. **Inbox**: The recipient sees the request in their "Inbox" tab (with a real-time badge count).
+3. **Accept/Decline**:
+    - **Accept**: The `messageRequests` status moves to `accepted`, and a new conversation is automatically provisioned.
+    - **Decline**: The request is hidden from the recipient.
+4. **Security**: Direct messages cannot be sent until a request is accepted, preventing spam.
 
 ### Image Attachments (Convex File Storage)
 
