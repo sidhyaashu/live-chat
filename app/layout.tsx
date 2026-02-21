@@ -1,7 +1,5 @@
 import type { Metadata } from 'next'
 import {
-  SignInButton,
-  SignUpButton,
   SignedIn,
   SignedOut,
   UserButton,
@@ -10,17 +8,17 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import { ConvexClientProvider } from '@/components/providers/ConvexClientProvider'
 import { UserSync } from '@/components/providers/UserSync'
-import { Zap } from 'lucide-react'
+import { GitMerge } from 'lucide-react'
 
 const inter = Inter({
   variable: '--font-geist-sans',
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
+  weight: ['400', '500', '600', '700'],
 })
 
 export const metadata: Metadata = {
   title: 'LiveChat — Real-time Messaging',
-  description: 'Real-time messaging with groups, reactions, and more',
+  description: 'Real-time messaging built on Convex, Next.js and Clerk',
 }
 
 export default function RootLayout({
@@ -33,35 +31,34 @@ export default function RootLayout({
       <body className={`${inter.variable} antialiased font-sans`}>
         <ConvexClientProvider>
           <UserSync />
-          <header className="glass sticky top-0 z-50 flex justify-between items-center px-5 h-16 border-b border-border/60 shadow-sm">
-            {/* Brand */}
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-md">
-                <Zap className="h-4 w-4 text-white" />
+          {/*
+            The header is ONLY shown to signed-in users (app shell).
+            The landing page gets zero navbar — it renders its own full-screen layout.
+          */}
+          <SignedIn>
+            <header className="sticky top-0 z-50 h-14 flex items-center justify-between px-4 border-b border-border bg-card">
+              {/* Brand mark */}
+              <div className="flex items-center gap-2 select-none">
+                <div className="h-7 w-7 rounded-md bg-foreground flex items-center justify-center">
+                  <GitMerge className="h-4 w-4 text-background" />
+                </div>
+                <span className="font-semibold text-sm gh-title">LiveChat</span>
               </div>
-              <span className="font-extrabold text-lg gradient-text tracking-tight">LiveChat</span>
-            </div>
+              <UserButton afterSignOutUrl="/" />
+            </header>
+          </SignedIn>
 
-            {/* Auth buttons */}
-            <div className="flex items-center gap-3">
-              <SignedOut>
-                <SignInButton mode="modal">
-                  <button className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-accent">
-                    Sign In
-                  </button>
-                </SignInButton>
-                <SignUpButton mode="modal">
-                  <button className="text-sm font-semibold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white rounded-full px-5 py-2 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105">
-                    Get Started
-                  </button>
-                </SignUpButton>
-              </SignedOut>
-              <SignedIn>
-                <UserButton afterSignOutUrl="/" />
-              </SignedIn>
-            </div>
-          </header>
-          <main>{children}</main>
+          <main className="h-[calc(100vh-56px)]">
+            <SignedIn>
+              {children}
+            </SignedIn>
+            <SignedOut>
+              {/* Landing page gets the full 100vh */}
+              <div className="h-screen overflow-y-auto">
+                {children}
+              </div>
+            </SignedOut>
+          </main>
         </ConvexClientProvider>
       </body>
     </html>
