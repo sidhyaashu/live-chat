@@ -61,4 +61,12 @@ export default defineSchema({
         lastActive: v.number(),
     }).index("by_userId", ["userId"])
         .index("by_conversationId", ["conversationId"]),
+
+    messageRequests: defineTable({
+        fromUserId: v.id("users"),
+        toUserId: v.id("users"),
+        status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("declined")),
+    }).index("by_toUserId", ["toUserId"])
+        .index("by_fromUserId", ["fromUserId"])
+        .index("by_pair", ["fromUserId", "toUserId"]),
 });

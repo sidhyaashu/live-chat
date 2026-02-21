@@ -31,8 +31,8 @@ export function MessageInput({ conversationId, replyTo, onCancelReply }: Message
     const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
     const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
-    // Clear typing indicator when input content changes
     useEffect(() => {
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
@@ -50,13 +50,17 @@ export function MessageInput({ conversationId, replyTo, onCancelReply }: Message
         };
     }, [content, imageFile, conversationId, updatePresence]);
 
-    // Clear typing indicator when navigating away
     useEffect(() => {
         return () => {
             updatePresence({ isOnline: true, isTyping: false, conversationId });
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [conversationId]);
+
+    // Focus input when reply changes
+    useEffect(() => {
+        if (replyTo) inputRef.current?.focus();
+    }, [replyTo]);
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -72,7 +76,6 @@ export function MessageInput({ conversationId, replyTo, onCancelReply }: Message
         setImageFile(file);
         const url = URL.createObjectURL(file);
         setImagePreview(url);
-        // Clear file input so same file can be re-selected
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
@@ -141,21 +144,24 @@ export function MessageInput({ conversationId, replyTo, onCancelReply }: Message
         }
     };
 
+    const canSend = (content.trim() || imageFile) && !isUploading;
+
     return (
-        <div className="border-t bg-white dark:bg-zinc-900">
-            {/* Reply preview banner */}
+        <div className="border-t border-border/60 bg-background/80 backdrop-blur-sm">
+            {/* Reply preview */}
             {replyTo && (
-                <div className="flex items-center gap-2 px-4 py-2 bg-zinc-50 dark:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-700">
-                    <div className="flex-1 border-l-2 border-primary pl-2 min-w-0">
+                <div className="flex items-center gap-3 px-4 py-2 bg-muted/40 border-b border-border/60">
+                    <div className="w-0.5 h-8 bg-gradient-to-b from-violet-500 to-indigo-500 rounded-full shrink-0" />
+                    <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-primary truncate">Replying to {replyTo.senderName}</p>
-                        <p className="text-xs text-zinc-500 truncate">{replyTo.content}</p>
+                        <p className="text-xs text-muted-foreground truncate">{replyTo.content}</p>
                     </div>
                     <button
                         onClick={onCancelReply}
-                        className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-full transition"
+                        className="p-1 hover:bg-muted rounded-full transition-all"
                         aria-label="Cancel reply"
                     >
-                        <X className="h-4 w-4 text-zinc-400" />
+                        <X className="h-4 w-4 text-muted-foreground" />
                     </button>
                 </div>
             )}
@@ -167,26 +173,26 @@ export function MessageInput({ conversationId, replyTo, onCancelReply }: Message
                         <img
                             src={imagePreview}
                             alt="Preview"
-                            className="h-20 w-20 rounded-lg object-cover border"
+                            className="h-20 w-20 rounded-xl object-cover border border-border shadow-sm"
                         />
                         <button
                             onClick={clearImage}
-                            className="absolute -top-1.5 -right-1.5 bg-zinc-800 text-white rounded-full p-0.5 hover:bg-red-600 transition"
+                            className="absolute -top-1.5 -right-1.5 bg-zinc-900 text-white rounded-full p-0.5 hover:bg-rose-600 transition-colors shadow"
                             aria-label="Remove image"
                         >
                             <X className="h-3 w-3" />
                         </button>
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-zinc-500 mt-1">
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                         <ImageIcon className="h-3.5 w-3.5" />
                         <span className="truncate max-w-[160px]">{imageFile?.name}</span>
                     </div>
                 </div>
             )}
 
-            {/* Error banner with retry */}
+            {/* Error banner */}
             {error && (
-                <div className="flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 text-xs">
+                <div className="flex items-center gap-2 px-4 py-2 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 text-xs border-b border-rose-200/50 dark:border-rose-900/30">
                     <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                     <span className="flex-1">{error}</span>
                     {lastFailedMsg && (
@@ -197,11 +203,11 @@ export function MessageInput({ conversationId, replyTo, onCancelReply }: Message
                             <RotateCcw className="h-3 w-3" /> Retry
                         </button>
                     )}
-                    <button onClick={() => setError(null)} className="ml-1 text-red-400 hover:text-red-600">✕</button>
+                    <button onClick={() => setError(null)} className="ml-1 hover:opacity-70">✕</button>
                 </div>
             )}
 
-            <form onSubmit={handleSubmit} className="p-4 flex items-center gap-2">
+            <form onSubmit={handleSubmit} className="p-3 flex items-center gap-2">
                 {/* Hidden file input */}
                 <input
                     ref={fileInputRef}
@@ -211,31 +217,38 @@ export function MessageInput({ conversationId, replyTo, onCancelReply }: Message
                     onChange={handleFileSelect}
                     aria-label="Attach image"
                 />
-                {/* Paperclip button */}
+                {/* Attach button */}
                 <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 shrink-0"
+                    className="p-2.5 hover:bg-muted rounded-xl transition-all text-muted-foreground hover:text-primary shrink-0 hover:scale-105"
                     aria-label="Attach image"
                     disabled={isUploading}
                 >
                     <Paperclip className="h-5 w-5" />
                 </button>
 
+                {/* Input */}
                 <input
+                    ref={inputRef}
                     type="text"
                     placeholder={imageFile ? 'Add a caption...' : 'Type a message...'}
-                    className="flex-1 bg-zinc-100 dark:bg-zinc-800 border-none rounded-full px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                    className="flex-1 bg-muted/50 border border-border/60 rounded-full px-5 py-2.5 focus:ring-2 focus:ring-primary/40 focus:border-primary/40 outline-none text-sm placeholder:text-muted-foreground/60 transition-all"
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     onKeyDown={handleKeyDown}
                     aria-label="Message input"
                     disabled={isUploading}
                 />
+
+                {/* Send button */}
                 <button
                     type="submit"
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground p-2 rounded-full transition disabled:opacity-50 shrink-0"
-                    disabled={(!content.trim() && !imageFile) || isUploading}
+                    className={`p-2.5 rounded-full transition-all shrink-0 ${canSend
+                        ? 'bg-gradient-to-br from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-md hover:shadow-lg hover:scale-110'
+                        : 'bg-muted text-muted-foreground cursor-not-allowed'
+                        }`}
+                    disabled={!canSend}
                     aria-label="Send message"
                 >
                     {isUploading ? (

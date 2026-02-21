@@ -47,9 +47,7 @@ export const send = mutation({
         }
 
         // Detect URLs and schedule a link preview fetch
-        // Strip trailing punctuation that commonly gets included in URL regex matches
-        const urlRegex = /(https?:\/\/[^\s]+?)(?:[.,)\]]+)?$/gm;
-        const urls = args.content.match(/(https?:\/\/[^\s.,)\]]+)/g);
+        const urls = args.content.match(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/g);
         if (urls && urls.length > 0 && !args.imageStorageId) {
             await ctx.scheduler.runAfter(0, internal.messages.fetchLinkPreviewAndPatch, {
                 messageId,
