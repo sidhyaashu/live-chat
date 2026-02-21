@@ -298,7 +298,8 @@ export const getConversations = query({
                     .filter((q: any) => q.and(
                         q.gt(q.field("_creationTime"), membership.lastReadTime),
                         q.eq(q.field("deleted"), false),
-                        q.eq(q.field("type"), "text")  // Don't count system messages as unread
+                        q.eq(q.field("type"), "text"),  // Don't count system messages as unread
+                        q.neq(q.field("senderId"), user._id)  // Don't count own messages as unread
                     ))
                     .collect();
 
