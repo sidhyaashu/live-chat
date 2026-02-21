@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Search, Plus, Users, MessageSquare, UserRound, Settings } from 'lucide-react';
-import { UserButton } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { formatConversationTime } from '@/lib/utils';
 
 type Tab = 'chats' | 'people';
 
@@ -18,6 +18,7 @@ export function Sidebar({ onOpenCreateGroup }: { onOpenCreateGroup: () => void }
     const users = useQuery(api.users.searchUsers, { searchTerm });
     const createConversation = useMutation(api.conversations.createOrGetConversation);
     const router = useRouter();
+    const pathname = usePathname();
 
     const handleCreateChat = async (userId: any) => {
         const id = await createConversation({ participantId: userId });
@@ -39,17 +40,14 @@ export function Sidebar({ onOpenCreateGroup }: { onOpenCreateGroup: () => void }
             {/* Header */}
             <div className="p-4 border-b bg-white dark:bg-zinc-900 flex items-center justify-between">
                 <h1 className="text-xl font-bold">Live Chat</h1>
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={onOpenCreateGroup}
-                        className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition"
-                        title="Create Group"
-                        aria-label="Create group chat"
-                    >
-                        <Plus className="h-5 w-5" />
-                    </button>
-                    <UserButton afterSignOutUrl="/" />
-                </div>
+                <button
+                    onClick={onOpenCreateGroup}
+                    className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition"
+                    title="Create Group"
+                    aria-label="Create group chat"
+                >
+                    <Plus className="h-5 w-5" />
+                </button>
             </div>
 
             {/* Search Bar */}
@@ -150,49 +148,62 @@ export function Sidebar({ onOpenCreateGroup }: { onOpenCreateGroup: () => void }
                                 ))}
                             </div>
                         )}
-                        {conversations?.map((conv) => (
-                            <button
-                                key={conv._id}
-                                onClick={() => router.push(`/conversations/${conv._id}`)}
-                                className="w-full flex items-center gap-3 p-3 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg transition text-left"
-                            >
-                                <div className="relative h-12 w-12 shrink-0">
-                                    {conv.isGroup ? (
-                                        <div className="h-full w-full rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
-                                            {conv.imageUrl ? (
-                                                <img src={conv.imageUrl} alt={conv.name || 'Group'} className="h-full w-full object-cover" />
-                                            ) : (
-                                                <Users className="h-6 w-6 text-primary" />
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <img
-                                            src={conv.otherUser?.imageUrl || '/placeholder-user.png'}
-                                            alt={conv.otherUser?.name || 'User'}
-                                            className="h-full w-full rounded-full object-cover"
-                                        />
-                                    )}
-                                    {!conv.isGroup && conv.otherUser?.isOnline && (
-                                        <span className="absolute bottom-0 right-0 h-3 w-3 bg-green-500 border-2 border-white dark:border-zinc-900 rounded-full" />
-                                    )}
-                                </div>
-                                <div className="flex-1 text-left overflow-hidden">
-                                    <div className="flex justify-between items-center gap-2">
-                                        <div className="font-medium truncate">
-                                            {conv.isGroup ? (conv.name || 'Group Chat') : (conv.otherUser?.name || 'User')}
-                                        </div>
-                                        {conv.unreadCount > 0 && (
-                                            <div className="bg-primary text-primary-foreground text-[10px] font-bold min-w-[20px] h-5 px-1 flex items-center justify-center rounded-full shrink-0">
-                                                {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
+                        {conversations?.map((conv) => {
+                            const isActive = pathname === `/conversations/${conv._id}`;
+                            return (
+                                <button
+                                    key={conv._id}
+                                    onClick={() => router.push(`/conversations/${conv._id}`)}
+                                    className={`w-full flex items-center gap-3 p-3 rounded-lg transition text-left ${isActive
+                                        ? 'bg-primary/10 border-l-2 border-primary pl-[10px]'
+                                        : 'hover:bg-zinc-200 dark:hover:bg-zinc-800'
+                                        }`}
+                                >
+                                    <div className="relative h-12 w-12 shrink-0">
+                                        {conv.isGroup ? (
+                                            <div className="h-full w-full rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
+                                                {conv.imageUrl ? (
+                                                    <img src={conv.imageUrl} alt={conv.name || 'Group'} className="h-full w-full object-cover" />
+                                                ) : (
+                                                    <Users className="h-6 w-6 text-primary" />
+                                                )}
                                             </div>
+                                        ) : (
+                                            <img
+                                                src={conv.otherUser?.imageUrl || '/placeholder-user.png'}
+                                                alt={conv.otherUser?.name || 'User'}
+                                                className="h-full w-full rounded-full object-cover"
+                                            />
+                                        )}
+                                        {!conv.isGroup && conv.otherUser?.isOnline && (
+                                            <span className="absolute bottom-0 right-0 h-3 w-3 bg-green-500 border-2 border-white dark:border-zinc-900 rounded-full" />
                                         )}
                                     </div>
-                                    <div className={`text-sm truncate ${conv.lastMessage?.deleted ? 'text-zinc-400 italic' : 'text-zinc-500'}`}>
-                                        {formatLastMessage(conv)}
+                                    <div className="flex-1 text-left overflow-hidden">
+                                        <div className="flex justify-between items-center gap-2">
+                                            <div className="font-medium truncate">
+                                                {conv.isGroup ? (conv.name || 'Group Chat') : (conv.otherUser?.name || 'User')}
+                                            </div>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                {conv.lastMessage && (
+                                                    <span className="text-[10px] text-zinc-400">
+                                                        {formatConversationTime(conv.lastMessage._creationTime)}
+                                                    </span>
+                                                )}
+                                                {conv.unreadCount > 0 && (
+                                                    <div className="bg-primary text-primary-foreground text-[10px] font-bold min-w-[20px] h-5 px-1 flex items-center justify-center rounded-full">
+                                                        {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className={`text-sm truncate ${conv.lastMessage?.deleted ? 'text-zinc-400 italic' : 'text-zinc-500'}`}>
+                                            {formatLastMessage(conv)}
+                                        </div>
                                     </div>
-                                </div>
-                            </button>
-                        ))}
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
             </div>

@@ -208,8 +208,11 @@ export const joinByInviteCode = mutation({
         const user = await getCurrentUser(ctx);
         if (!user) throw new Error("Unauthorized");
 
-        const conversations = await ctx.db.query("conversations").collect();
-        const conv = conversations.find(c => c.inviteCode === args.code.toUpperCase());
+        // Use index instead of full table scan
+        const conv = await ctx.db
+            .query("conversations")
+            .withIndex("by_inviteCode", (q: any) => q.eq("inviteCode", args.code.toUpperCase()))
+            .unique();
         if (!conv) throw new Error("Invalid invite code");
 
         const alreadyMember = await checkMembership(ctx, conv._id, user._id);
@@ -352,3 +355,29 @@ export async function checkMembership(ctx: any, conversationId: any, userId: any
         .unique();
     return !!membership;
 }
+
+// ── Get read status for all members of a conversation ─────────────────────────
+export const getReadStatus = query({
+    args: { conversationId: v.id("conversations") },
+    handler: async (ctx, args) => {
+        const user = await getCurrentUser(ctx);
+        if (!user) return {};
+
+        const isMember = await checkMembership(ctx, args.conversationId, user._id);
+        if (!isMember) return {};
+
+        const memberships = await ctx.db
+            .query("conversationMembers")
+            .withIndex("by_conversationId", (q: any) => q.eq("conversationId", args.conversationId))
+            .collect();
+
+        const result: Record<string, number> = {};
+        for (const m of memberships) {
+            if (m.userId !== user._id) {
+                result[m.userId] = m.lastReadTime;
+            }
+        }
+        return result;
+    },
+});
+

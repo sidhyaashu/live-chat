@@ -1,55 +1,94 @@
 'use client';
 
-import { useQuery, useMutation } from 'convex/react';
+import { usePaginatedQuery, useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useParams, useRouter } from 'next/navigation';
 import { ChatLayout } from '@/components/chat/ChatLayout';
 import { Message } from '@/components/chat/Message';
 import { MessageInput } from '@/components/chat/MessageInput';
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { ChevronLeft, Users, MessageSquare } from 'lucide-react';
+import { ChevronLeft, Loader2, Users, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import { Id } from '@/convex/_generated/dataModel';
 import { GroupManagementDrawer } from '@/components/chat/GroupManagementDrawer';
+
+interface ReplyTo {
+    id: Id<"messages">;
+    senderName: string;
+    content: string;
+}
 
 export default function ChatPage() {
     const params = useParams();
     const router = useRouter();
     const conversationId = params.id as Id<"conversations">;
 
-    const messages = useQuery(api.messages.list, { conversationId });
+    // ── Paginated messages (30 per page, newest first → reversed for display) ──
+    const {
+        results: rawMessages,
+        status,
+        loadMore,
+    } = usePaginatedQuery(
+        api.messages.list,
+        { conversationId },
+        { initialNumItems: 30 }
+    );
+
+    // Messages come in desc order from DB; reverse for chronological display
+    const messages = [...(rawMessages ?? [])].reverse();
+
     const conversations = useQuery(api.conversations.getConversations);
     const presence = useQuery(api.presence.getPresence, { conversationId });
     const reactions = useQuery(api.reactions.getReactions, {
-        messageIds: messages?.map(m => m._id) ?? [],
+        messageIds: rawMessages?.map((m: any) => m._id) ?? [],
     });
+    const readStatus = useQuery(api.conversations.getReadStatus, { conversationId });
     const markAsRead = useMutation(api.conversations.markAsRead);
     const me = useQuery(api.users.getMe);
     const [showGroupManagement, setShowGroupManagement] = useState(false);
+    const [replyTo, setReplyTo] = useState<ReplyTo | null>(null);
 
-    const conversation = conversations?.find(c => c._id === conversationId);
+    const conversation = conversations?.find((c: any) => c._id === conversationId);
 
-    const typingParticipants = presence?.filter(p => p.isTyping) || [];
+    // Compute the other user's lastReadTime to pass to each message for read receipts
+    // Guard against empty object — Math.max(...[]) = -Infinity
+    const readStatusValues = Object.values((readStatus as Record<string, number>) ?? {});
+    const otherUserLastReadTime = readStatusValues.length > 0 ? Math.max(...readStatusValues) : 0;
+
+    const typingParticipants = presence?.filter((p: any) => p.isTyping) || [];
     const typingDisplay = typingParticipants.length === 0 ? null :
         typingParticipants.length === 1 ? `${typingParticipants[0].user?.name} is typing...` :
             typingParticipants.length === 2 ? `${typingParticipants[0].user?.name} and ${typingParticipants[1].user?.name} are typing...` :
                 `${typingParticipants[0].user?.name} and ${typingParticipants.length - 1} others are typing...`;
 
     const scrollRef = useRef<HTMLDivElement>(null);
+    const topSentinelRef = useRef<HTMLDivElement>(null);
     const [showScrollButton, setShowScrollButton] = useState(false);
+    const isLoadingMore = status === 'LoadingMore';
 
+    // ── Scroll to bottom ──────────────────────────────────────────────────────
     const scrollToBottom = useCallback(() => {
         if (scrollRef.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
     }, []);
 
+    // ── Mark as read: only when conversation changes, not on every new message ──
+    const lastMarkedConvRef = useRef<string | null>(null);
     useEffect(() => {
-        if (conversationId) {
-            markAsRead({ conversationId });
-        }
-    }, [conversationId, messages, markAsRead]);
+        if (!conversationId || lastMarkedConvRef.current === conversationId) return;
+        lastMarkedConvRef.current = conversationId;
+        markAsRead({ conversationId });
+    }, [conversationId, markAsRead]);
 
+    // Also mark as read when tab regains focus
+    useEffect(() => {
+        const onFocus = () => markAsRead({ conversationId });
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
+    }, [conversationId, markAsRead]);
+
+    // ── Auto-scroll on new messages (unless user scrolled up) ─────────────────
     useEffect(() => {
         if (!scrollRef.current) return;
         const isAtBottom =
@@ -59,14 +98,46 @@ export default function ChatPage() {
         } else {
             setShowScrollButton(true);
         }
-    }, [messages, typingParticipants, scrollToBottom]);
+    }, [messages.length, typingParticipants.length, scrollToBottom]);
+
+    // ── IntersectionObserver for infinite scroll (load more when top is visible) ─
+    useEffect(() => {
+        const sentinel = topSentinelRef.current;
+        if (!sentinel) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && status === 'CanLoadMore') {
+                    const el = scrollRef.current;
+                    const prevHeight = el?.scrollHeight ?? 0;
+                    loadMore(30);
+                    // Double-rAF: first rAF fires before React re-renders; second fires after
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            if (el) {
+                                el.scrollTop = el.scrollHeight - prevHeight;
+                            }
+                        });
+                    });
+                }
+            },
+            { root: scrollRef.current, threshold: 0.1 }
+        );
+
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+    }, [status, loadMore]);
 
     const handleScroll = () => {
         if (!scrollRef.current) return;
         const isAtBottom =
             scrollRef.current.scrollHeight - scrollRef.current.scrollTop <= scrollRef.current.clientHeight + 100;
         setShowScrollButton(!isAtBottom);
-        if (isAtBottom) setShowScrollButton(false);
+    };
+
+    // ── Reply handler ─────────────────────────────────────────────────────────
+    const handleReply = (msg: { id: Id<"messages">; senderName: string; content: string }) => {
+        setReplyTo(msg);
     };
 
     // ── Loading state ──────────────────────────────────────────────────────────
@@ -74,7 +145,6 @@ export default function ChatPage() {
         return (
             <ChatLayout>
                 <div className="flex-1 flex flex-col animate-pulse">
-                    {/* Header skeleton */}
                     <div className="p-4 border-b flex items-center gap-3 bg-white dark:bg-zinc-900">
                         <div className="h-10 w-10 rounded-full bg-zinc-200 dark:bg-zinc-700" />
                         <div className="space-y-1.5 flex-1">
@@ -82,7 +152,6 @@ export default function ChatPage() {
                             <div className="h-3 bg-zinc-200 dark:bg-zinc-700 rounded w-1/6" />
                         </div>
                     </div>
-                    {/* Messages skeleton */}
                     <div className="flex-1 p-4 space-y-4">
                         {[1, 2, 3, 4, 5].map(i => (
                             <div key={i} className={`flex gap-3 ${i % 2 === 0 ? 'flex-row-reverse' : ''}`}>
@@ -166,7 +235,6 @@ export default function ChatPage() {
                         </div>
                     </button>
                 </div>
-                {/* Profile Link (Desktop Shortcut) */}
                 <Link
                     href="/profile"
                     className="hidden md:flex text-xs text-zinc-400 hover:text-primary transition"
@@ -181,8 +249,23 @@ export default function ChatPage() {
                 onScroll={handleScroll}
                 className="flex-1 overflow-y-auto p-4 bg-zinc-50 dark:bg-zinc-950 relative"
             >
-                {/* Messages loading */}
-                {messages === undefined && (
+                {/* Top sentinel for IntersectionObserver */}
+                <div ref={topSentinelRef} className="h-1" />
+
+                {/* "Loading more" spinner at top */}
+                {isLoadingMore && (
+                    <div className="flex justify-center py-3">
+                        <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+                    </div>
+                )}
+
+                {/* "All caught up" indicator */}
+                {status === 'Exhausted' && messages.length > 0 && (
+                    <p className="text-center text-[11px] text-zinc-400 py-2">You&apos;re all caught up! 🎉</p>
+                )}
+
+                {/* Messages loading skeleton */}
+                {status === 'LoadingFirstPage' && (
                     <div className="space-y-4 animate-pulse">
                         {[1, 2, 3].map(i => (
                             <div key={i} className={`flex gap-3 ${i % 2 === 0 ? 'flex-row-reverse' : ''}`}>
@@ -193,7 +276,7 @@ export default function ChatPage() {
                     </div>
                 )}
 
-                {messages?.map((msg: any) => (
+                {messages.map((msg: any) => (
                     <Message
                         key={msg._id}
                         id={msg._id}
@@ -208,6 +291,11 @@ export default function ChatPage() {
                         reactions={reactions?.[msg._id] || []}
                         currentUserId={me?._id as Id<"users">}
                         isGroup={conversation.isGroup}
+                        imageStorageId={msg.imageStorageId}
+                        replyToMessage={msg.replyToMessage}
+                        linkPreview={msg.linkPreview}
+                        otherUserLastReadTime={msg.isMe ? otherUserLastReadTime : undefined}
+                        onReply={handleReply}
                     />
                 ))}
 
@@ -224,7 +312,7 @@ export default function ChatPage() {
                 )}
 
                 {/* Empty state */}
-                {messages?.length === 0 && !typingDisplay && (
+                {messages.length === 0 && status !== 'LoadingFirstPage' && !typingDisplay && (
                     <div className="h-full flex flex-col items-center justify-center text-zinc-400 gap-2">
                         <MessageSquare className="h-10 w-10 text-zinc-300" />
                         <p className="font-medium">No messages yet</p>
@@ -244,7 +332,11 @@ export default function ChatPage() {
             </div>
 
             {/* Input */}
-            <MessageInput conversationId={conversationId} />
+            <MessageInput
+                conversationId={conversationId}
+                replyTo={replyTo}
+                onCancelReply={() => setReplyTo(null)}
+            />
 
             {/* Group Management Drawer */}
             {conversation.isGroup && (
@@ -257,4 +349,3 @@ export default function ChatPage() {
         </ChatLayout>
     );
 }
-

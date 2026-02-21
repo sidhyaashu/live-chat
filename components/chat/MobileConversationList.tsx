@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { CreateGroupModal } from './CreateGroupModal';
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
+import { formatConversationTime } from '@/lib/utils';
 
 type Tab = 'chats' | 'people';
 
@@ -181,11 +182,18 @@ export function MobileConversationList() {
                                         <div className="font-semibold truncate">
                                             {conv.isGroup ? (conv.name || 'Group Chat') : (conv.otherUser?.name || 'User')}
                                         </div>
-                                        {conv.unreadCount > 0 && (
-                                            <div className="bg-primary text-primary-foreground text-[10px] font-bold min-w-[20px] h-5 px-1 flex items-center justify-center rounded-full shrink-0">
-                                                {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
-                                            </div>
-                                        )}
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            {conv.lastMessage && (
+                                                <span className="text-[10px] text-zinc-400">
+                                                    {formatConversationTime(conv.lastMessage._creationTime)}
+                                                </span>
+                                            )}
+                                            {conv.unreadCount > 0 && (
+                                                <div className="bg-primary text-primary-foreground text-[10px] font-bold min-w-[20px] h-5 px-1 flex items-center justify-center rounded-full">
+                                                    {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                     <div className={`text-sm truncate ${conv.lastMessage?.deleted ? 'text-zinc-400 italic' : 'text-zinc-500'}`}>
                                         {formatLastMessage(conv)}

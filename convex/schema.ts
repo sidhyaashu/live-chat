@@ -18,7 +18,7 @@ export default defineSchema({
         imageUrl: v.optional(v.string()),     // Group avatar image URL
         inviteCode: v.optional(v.string()),   // Short code for invite links
         creatorId: v.optional(v.id("users")), // Original group creator
-    }),
+    }).index("by_inviteCode", ["inviteCode"]),
 
     conversationMembers: defineTable({
         conversationId: v.id("conversations"),
@@ -34,6 +34,18 @@ export default defineSchema({
         content: v.string(),
         type: v.union(v.literal("text"), v.literal("system")),
         deleted: v.boolean(),
+        // Image attachment (Convex File Storage)
+        imageStorageId: v.optional(v.id("_storage")),
+        // Reply threading
+        replyToMessageId: v.optional(v.id("messages")),
+        // Cached Open Graph link preview
+        linkPreview: v.optional(v.object({
+            url: v.string(),
+            title: v.optional(v.string()),
+            description: v.optional(v.string()),
+            image: v.optional(v.string()),
+            siteName: v.optional(v.string()),
+        })),
     }).index("by_conversationId", ["conversationId"]),
 
     reactions: defineTable({

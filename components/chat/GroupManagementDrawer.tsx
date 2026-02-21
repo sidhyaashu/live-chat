@@ -32,7 +32,9 @@ export function GroupManagementDrawer({ conversationId, open, onClose }: GroupMa
     const [name, setName] = useState('');
     const [imageUrl, setImageUrl] = useState('');
     const [editingImage, setEditingImage] = useState(false);
-    const [inviteCode, setInviteCode] = useState<string | null>(group?.inviteCode ?? null);
+    // Don't init from group?.inviteCode — group is undefined on first render.
+    // Instead track only a newly-generated code separately; display falls back to group.inviteCode.
+    const [newlyGeneratedCode, setNewlyGeneratedCode] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
     const [showLeaveDialog, setShowLeaveDialog] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -40,11 +42,11 @@ export function GroupManagementDrawer({ conversationId, open, onClose }: GroupMa
 
     const handleGenerateInvite = async () => {
         const code = await generateInviteCode({ conversationId });
-        setInviteCode(code);
+        setNewlyGeneratedCode(code ?? null);
     };
 
     const handleCopyLink = async () => {
-        const url = `${window.location.origin}/join/${inviteCode ?? group?.inviteCode}`;
+        const url = `${window.location.origin}/join/${newlyGeneratedCode ?? group?.inviteCode}`;
         await navigator.clipboard.writeText(url);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -73,7 +75,7 @@ export function GroupManagementDrawer({ conversationId, open, onClose }: GroupMa
 
     if (!group) return null;
 
-    const inviteLinkAvailable = inviteCode || group.inviteCode;
+    const inviteLinkAvailable = newlyGeneratedCode || group.inviteCode;
 
     return (
         <>
@@ -167,7 +169,7 @@ export function GroupManagementDrawer({ conversationId, open, onClose }: GroupMa
                         {inviteLinkAvailable ? (
                             <div className="flex items-center gap-2">
                                 <code className="text-xs bg-white dark:bg-zinc-900 border rounded px-2 py-1 flex-1 truncate">
-                                    {`${typeof window !== 'undefined' ? window.location.origin : ''}/join/${inviteCode ?? group.inviteCode}`}
+                                    {`${typeof window !== 'undefined' ? window.location.origin : ''}/join/${newlyGeneratedCode ?? group.inviteCode}`}
                                 </code>
                                 <button
                                     onClick={handleCopyLink}
