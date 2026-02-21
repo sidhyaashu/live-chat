@@ -3,9 +3,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { Search, Plus, Users, MessageSquare, UserRound } from 'lucide-react';
+import { Search, Plus, Users, MessageSquare, UserRound, Settings } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { CreateGroupModal } from './CreateGroupModal';
+import Link from 'next/link';
+import { UserButton } from '@clerk/nextjs';
 
 type Tab = 'chats' | 'people';
 
@@ -33,18 +35,21 @@ export function MobileConversationList() {
     const effectiveTab = searchTerm ? 'people' : activeTab;
 
     return (
-        <div className="flex md:hidden flex-col flex-1 overflow-hidden bg-zinc-50 dark:bg-zinc-900">
+        <div className="flex md:hidden flex-col h-full overflow-hidden bg-zinc-50 dark:bg-zinc-900">
             {/* Header */}
             <div className="p-4 border-b bg-white dark:bg-zinc-900 flex items-center justify-between">
                 <h1 className="text-xl font-bold">Live Chat</h1>
-                <button
-                    onClick={() => setShowCreateGroup(true)}
-                    className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition"
-                    title="Create Group"
-                    aria-label="Create group chat"
-                >
-                    <Plus className="h-5 w-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setShowCreateGroup(true)}
+                        className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition"
+                        title="Create Group"
+                        aria-label="Create group chat"
+                    >
+                        <Plus className="h-5 w-5" />
+                    </button>
+                    <UserButton afterSignOutUrl="/" />
+                </div>
             </div>
 
             {/* Search */}
@@ -129,19 +134,6 @@ export function MobileConversationList() {
                                 </div>
                             </button>
                         ))}
-                        {users?.length === 0 && searchTerm && (
-                            <div className="text-center py-12 text-zinc-500">
-                                <Search className="h-10 w-10 mx-auto text-zinc-300 mb-2" />
-                                <p className="text-sm">No users found for &ldquo;{searchTerm}&rdquo;</p>
-                            </div>
-                        )}
-                        {users?.length === 0 && !searchTerm && (
-                            <div className="text-center py-12 text-zinc-500">
-                                <UserRound className="h-10 w-10 mx-auto text-zinc-300 mb-2" />
-                                <p className="text-sm font-medium">No other users yet</p>
-                                <p className="text-xs text-zinc-400 mt-1">Share the app link so others can sign up!</p>
-                            </div>
-                        )}
                     </div>
                 ) : (
                     <div className="px-2 py-2">
@@ -166,8 +158,12 @@ export function MobileConversationList() {
                             >
                                 <div className="relative h-14 w-14 shrink-0">
                                     {conv.isGroup ? (
-                                        <div className="h-full w-full rounded-full bg-primary/10 flex items-center justify-center">
-                                            <Users className="h-7 w-7 text-primary" />
+                                        <div className="h-full w-full rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
+                                            {conv.imageUrl ? (
+                                                <img src={conv.imageUrl} alt={conv.name || 'Group'} className="h-full w-full object-cover" />
+                                            ) : (
+                                                <Users className="h-7 w-7 text-primary" />
+                                            )}
                                         </div>
                                     ) : (
                                         <img
@@ -197,17 +193,22 @@ export function MobileConversationList() {
                                 </div>
                             </button>
                         ))}
-                        {conversations?.length === 0 && (
-                            <div className="text-center py-12">
-                                <MessageSquare className="h-12 w-12 mx-auto text-zinc-300 mb-2" />
-                                <p className="text-zinc-500 text-sm font-medium">No conversations yet</p>
-                                <p className="text-xs text-zinc-400 mt-1">
-                                    Go to <span className="font-semibold">People</span> to start chatting
-                                </p>
-                            </div>
-                        )}
                     </div>
                 )}
+            </div>
+
+            {/* Bottom Bar / Profile Link */}
+            <div className="p-3 border-t bg-white dark:bg-zinc-900">
+                <Link
+                    href="/profile"
+                    className="flex items-center gap-3 p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition text-sm font-medium"
+                >
+                    <div className="h-8 w-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center border shadow-sm shrink-0">
+                        <UserRound className="h-4 w-4 text-zinc-500" />
+                    </div>
+                    <span className="flex-1">My Profile</span>
+                    <Settings className="h-4 w-4 text-zinc-400" />
+                </Link>
             </div>
 
             {showCreateGroup && <CreateGroupModal onClose={() => setShowCreateGroup(false)} />}

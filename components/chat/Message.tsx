@@ -1,111 +1,153 @@
 'use client';
 
-import { format, isToday, isThisYear } from 'date-fns';
-import { cn } from '@/lib/utils';
-import { Trash2, Smile } from 'lucide-react';
+import { useState } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Id } from '@/convex/_generated/dataModel';
-import { useState } from 'react';
+import { Trash2, SmilePlus } from 'lucide-react';
+import { format } from 'date-fns';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
-interface ReactionData {
+type ReactionData = {
     _id: Id<"reactions">;
-    messageId: Id<"messages">;
-    userId: Id<"users">;
     emoji: string;
-}
+    userId: Id<"users">;
+};
 
-interface MessageProps {
+type MessageProps = {
     id: Id<"messages">;
     content: string;
+    senderId: Id<"users">;
     senderName: string;
     senderImage: string;
     isMe: boolean;
-    timestamp: number;
-    isDeleted?: boolean;
+    type: 'text' | 'system';
+    deleted: boolean;
+    createdAt: number;
     reactions: ReactionData[];
-}
+    currentUserId: Id<"users">;
+    isGroup: boolean;
+};
 
-const EMOJIS = ['👍', '❤️', '😂', '😮', '😢'];
+const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎉'];
 
-export function Message({ id, content, senderName, senderImage, isMe, timestamp, isDeleted, reactions }: MessageProps) {
-    const [showReactions, setShowReactions] = useState(false);
-    const deleteMessage = useMutation(api.messages.remove);
+export function Message({
+    id, content, senderName, senderImage, isMe, type, deleted,
+    createdAt, reactions, currentUserId, isGroup,
+}: MessageProps) {
+    const [showPicker, setShowPicker] = useState(false);
+    const removeMessage = useMutation(api.messages.remove);
     const toggleReaction = useMutation(api.reactions.toggleReaction);
 
-    const formatTimestamp = (ts: number) => {
-        const date = new Date(ts);
-        if (isToday(date)) return format(date, 'h:mm a');
-        if (isThisYear(date)) return format(date, 'MMM d, h:mm a');
-        return format(date, 'MMM d yyyy, h:mm a');
-    };
+    // ── System message (join/leave/rename) ────────────────────────────────────
+    if (type === 'system') {
+        return (
+            <div className="flex items-center justify-center my-2 px-4">
+                <div className="flex items-center gap-2 max-w-[80%]">
+                    <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
+                    <span className="text-xs text-zinc-400 dark:text-zinc-500 text-center px-3 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-full whitespace-nowrap">
+                        {content}
+                        <span className="ml-2 opacity-60">{format(new Date(createdAt), 'MMM d')}</span>
+                    </span>
+                    <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
+                </div>
+            </div>
+        );
+    }
 
-    // Aggregate reaction counts — properly typed
-    const reactionCounts = reactions.reduce<Record<string, number>>((acc, r) => {
-        acc[r.emoji] = (acc[r.emoji] || 0) + 1;
-        return acc;
-    }, {});
+    // ── Count reactions ───────────────────────────────────────────────────────
+    const reactionCounts = reactions.reduce<Record<string, { count: number; isMine: boolean }>>(
+        (acc, r) => {
+            if (!acc[r.emoji]) acc[r.emoji] = { count: 0, isMine: false };
+            acc[r.emoji].count++;
+            if (r.userId === currentUserId) acc[r.emoji].isMine = true;
+            return acc;
+        },
+        {}
+    );
 
     return (
-        <div className={cn("group flex gap-3 mb-4 relative", isMe ? "flex-row-reverse" : "flex-row")}>
-            <img
-                src={senderImage || '/placeholder-user.png'}
-                alt={senderName}
-                className="h-8 w-8 rounded-full self-end mb-1 shrink-0 object-cover"
-            />
-            <div className={cn("max-w-[70%] flex flex-col", isMe ? "items-end" : "items-start")}>
-                <div className="flex items-center gap-2 mb-1 px-1">
-                    <span className="text-xs font-medium text-zinc-500">{senderName}</span>
-                    <span className="text-[10px] text-zinc-400">{formatTimestamp(timestamp)}</span>
-                </div>
-                <div className="relative">
-                    <div className={cn(
-                        "px-4 py-2 rounded-2xl text-sm shadow-sm break-words max-w-full",
-                        isMe ? "bg-primary text-primary-foreground rounded-br-none" : "bg-zinc-100 dark:bg-zinc-800 rounded-bl-none",
-                        isDeleted && "italic opacity-60"
-                    )}>
-                        {content}
-                    </div>
+        <div className={`flex gap-2 group ${isMe ? 'flex-row-reverse' : ''} items-end mb-1`}>
+            {/* Avatar */}
+            {!isMe && (
+                <img
+                    src={senderImage || '/placeholder-user.png'}
+                    alt={senderName}
+                    className="h-7 w-7 rounded-full object-cover shrink-0 mb-1"
+                />
+            )}
 
-                    {/* Hover Actions */}
-                    {!isDeleted && (
-                        <div className={cn(
-                            "absolute top-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity",
-                            isMe ? "right-full mr-2" : "left-full ml-2"
-                        )}>
+            {/* Bubble + reactions */}
+            <div className={`flex flex-col gap-1 max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}>
+                {/* Sender name in groups */}
+                {!isMe && isGroup && (
+                    <span className="text-xs font-semibold text-zinc-500 px-1">{senderName}</span>
+                )}
+
+                <div className="relative">
+                    {/* Action toolbar (hover) */}
+                    {!deleted && (
+                        <div className={`absolute top-0 -translate-y-1/2 ${isMe ? 'left-0 -translate-x-full pr-2' : 'right-0 translate-x-full pl-2'} hidden group-hover:flex items-center gap-1 z-10`}>
                             <button
-                                onClick={() => setShowReactions(!showReactions)}
-                                className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition"
-                                aria-label="React to message"
+                                onClick={() => setShowPicker(!showPicker)}
+                                className="p-1.5 bg-white dark:bg-zinc-800 border rounded-lg shadow-sm hover:bg-zinc-50 dark:hover:bg-zinc-700 transition"
+                                aria-label="Add reaction"
                             >
-                                <Smile className="h-4 w-4" />
+                                <SmilePlus className="h-3.5 w-3.5 text-zinc-500" />
                             </button>
                             {isMe && (
-                                <button
-                                    onClick={() => deleteMessage({ messageId: id })}
-                                    className="p-1 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-full text-zinc-400 hover:text-red-500 transition"
-                                    aria-label="Delete message"
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                </button>
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <button
+                                            className="p-1.5 bg-white dark:bg-zinc-800 border rounded-lg shadow-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition"
+                                            aria-label="Delete message"
+                                        >
+                                            <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                                        </button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Delete this message?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                This message will be marked as deleted for everyone in the conversation. This action cannot be undone.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction
+                                                onClick={() => removeMessage({ messageId: id })}
+                                                className="bg-red-600 hover:bg-red-700 text-white"
+                                            >
+                                                Delete
+                                            </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
                             )}
                         </div>
                     )}
 
-                    {/* Reaction Picker */}
-                    {showReactions && (
-                        <div className={cn(
-                            "absolute bottom-full mb-2 bg-white dark:bg-zinc-800 border rounded-full p-1 shadow-lg flex gap-1 z-20",
-                            isMe ? "right-0" : "left-0"
-                        )}>
+                    {/* Emoji picker */}
+                    {showPicker && (
+                        <div className={`absolute bottom-full mb-1 ${isMe ? 'right-0' : 'left-0'} bg-white dark:bg-zinc-800 border rounded-xl shadow-lg p-1.5 flex gap-1 z-20`}>
                             {EMOJIS.map(emoji => (
                                 <button
                                     key={emoji}
                                     onClick={() => {
                                         toggleReaction({ messageId: id, emoji });
-                                        setShowReactions(false);
+                                        setShowPicker(false);
                                     }}
-                                    className="hover:scale-125 transition p-1 text-base"
+                                    className="text-lg hover:scale-125 transition-transform p-0.5 rounded"
                                     aria-label={`React with ${emoji}`}
                                 >
                                     {emoji}
@@ -113,23 +155,44 @@ export function Message({ id, content, senderName, senderImage, isMe, timestamp,
                             ))}
                         </div>
                     )}
+
+                    {/* Message bubble */}
+                    <div className={`px-3 py-2 rounded-2xl text-sm break-words ${isMe
+                            ? 'bg-primary text-primary-foreground rounded-br-sm'
+                            : 'bg-white dark:bg-zinc-800 border rounded-bl-sm'
+                        } ${deleted ? 'opacity-60' : ''}`}>
+                        {deleted ? (
+                            <span className="italic text-xs">🗑 This message was deleted</span>
+                        ) : (
+                            content
+                        )}
+                    </div>
                 </div>
 
-                {/* Reaction Bar */}
-                {Object.keys(reactionCounts).length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                        {Object.entries(reactionCounts).map(([emoji, count]) => (
+                {/* Reactions */}
+                {Object.entries(reactionCounts).length > 0 && (
+                    <div className="flex flex-wrap gap-1 px-1">
+                        {Object.entries(reactionCounts).map(([emoji, data]) => (
                             <button
                                 key={emoji}
                                 onClick={() => toggleReaction({ messageId: id, emoji })}
-                                className="bg-white dark:bg-zinc-800 border hover:border-primary rounded-full px-1.5 py-0.5 text-[11px] shadow-sm flex items-center gap-0.5 transition"
-                                aria-label={`${count} ${emoji} reaction${count > 1 ? 's' : ''}`}
+                                className={`flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full border transition ${data.isMine
+                                        ? 'bg-primary/10 border-primary/30 text-primary'
+                                        : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                                    }`}
+                                aria-label={`${emoji} reaction by ${data.count} people`}
                             >
-                                {emoji}{count > 1 && <span className="ml-0.5 font-medium">{count}</span>}
+                                <span>{emoji}</span>
+                                <span className="font-medium">{data.count}</span>
                             </button>
                         ))}
                     </div>
                 )}
+
+                {/* Timestamp */}
+                <span className="text-[10px] text-zinc-400 px-1">
+                    {format(new Date(createdAt), 'h:mm a')}
+                </span>
             </div>
         </div>
     );

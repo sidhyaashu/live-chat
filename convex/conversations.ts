@@ -1,23 +1,34 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
+// ── Helper: generate a random 8-char invite code ─────────────────────────────
+function generateCode() {
+    return Math.random().toString(36).substring(2, 10).toUpperCase();
+}
+
+// ── Helper: insert a system message and update lastMessageId ─────────────────
+async function insertSystemMessage(ctx: any, conversationId: any, content: string, senderId: any) {
+    const msgId = await ctx.db.insert("messages", {
+        conversationId,
+        senderId,
+        content,
+        type: "system",
+        deleted: false,
+    });
+    await ctx.db.patch(conversationId, { lastMessageId: msgId });
+    return msgId;
+}
+
+// ── Create or retrieve a 1:1 DM ───────────────────────────────────────────────
 export const createOrGetConversation = mutation({
     args: { participantId: v.id("users") },
     handler: async (ctx, args) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) throw new Error("Unauthorized");
+        const user = await getCurrentUser(ctx);
+        if (!user) throw new Error("Unauthorized");
 
-        const currentUser = await ctx.db
-            .query("users")
-            .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-            .unique();
-
-        if (!currentUser) throw new Error("User not found");
-
-        // Check if DM already exists
         const myMemberships = await ctx.db
             .query("conversationMembers")
-            .withIndex("by_userId", (q) => q.eq("userId", currentUser._id))
+            .withIndex("by_userId", (q: any) => q.eq("userId", user._id))
             .collect();
 
         for (const membership of myMemberships) {
@@ -28,75 +39,229 @@ export const createOrGetConversation = mutation({
                     .withIndex("by_conversationId", (q: any) => q.eq("conversationId", conversation._id))
                     .filter((q: any) => q.eq(q.field("userId"), args.participantId))
                     .unique();
-
                 if (otherMember) return conversation._id;
             }
         }
 
-        // Create new DM
-        const conversationId = await ctx.db.insert("conversations", {
-            isGroup: false,
-        });
-
-        await ctx.db.insert("conversationMembers", {
-            conversationId,
-            userId: currentUser._id,
-            lastReadTime: Date.now(),
-        });
-
-        await ctx.db.insert("conversationMembers", {
-            conversationId,
-            userId: args.participantId,
-            lastReadTime: 0,
-        });
-
+        const conversationId = await ctx.db.insert("conversations", { isGroup: false });
+        await ctx.db.insert("conversationMembers", { conversationId, userId: user._id, lastReadTime: Date.now() });
+        await ctx.db.insert("conversationMembers", { conversationId, userId: args.participantId, lastReadTime: 0 });
         return conversationId;
     },
 });
 
+// ── Create a group chat ────────────────────────────────────────────────────────
 export const createGroup = mutation({
     args: {
         name: v.string(),
         participantIds: v.array(v.id("users")),
+        imageUrl: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) throw new Error("Unauthorized");
-
-        const user = await ctx.db
-            .query("users")
-            .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-            .unique();
-
-        if (!user) throw new Error("User not found");
+        const user = await getCurrentUser(ctx);
+        if (!user) throw new Error("Unauthorized");
 
         const conversationId = await ctx.db.insert("conversations", {
             isGroup: true,
             name: args.name,
+            imageUrl: args.imageUrl,
+            creatorId: user._id,
         });
 
-        // Add creator
+        // Add creator as admin
         await ctx.db.insert("conversationMembers", {
-            conversationId,
-            userId: user._id,
-            lastReadTime: Date.now(),
+            conversationId, userId: user._id, lastReadTime: Date.now(), role: "admin",
         });
 
-        // Add other participants
+        // Add other members
         await Promise.all(
             args.participantIds.map((id) =>
                 ctx.db.insert("conversationMembers", {
-                    conversationId,
-                    userId: id,
-                    lastReadTime: 0,
+                    conversationId, userId: id, lastReadTime: 0, role: "member",
                 })
             )
         );
+
+        // System message: group created
+        await insertSystemMessage(ctx, conversationId, `${user.name} created the group`, user._id);
 
         return conversationId;
     },
 });
 
+// ── Update group name / image ─────────────────────────────────────────────────
+export const updateGroup = mutation({
+    args: {
+        conversationId: v.id("conversations"),
+        name: v.optional(v.string()),
+        imageUrl: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const user = await getCurrentUser(ctx);
+        if (!user) throw new Error("Unauthorized");
+
+        const isMember = await checkMembership(ctx, args.conversationId, user._id);
+        if (!isMember) throw new Error("Not a member");
+
+        const patch: Record<string, any> = {};
+        if (args.name !== undefined) patch.name = args.name;
+        if (args.imageUrl !== undefined) patch.imageUrl = args.imageUrl;
+
+        await ctx.db.patch(args.conversationId, patch);
+
+        if (args.name) {
+            await insertSystemMessage(ctx, args.conversationId, `${user.name} renamed the group to "${args.name}"`, user._id);
+        }
+    },
+});
+
+// ── Add a member to a group ───────────────────────────────────────────────────
+export const addMember = mutation({
+    args: {
+        conversationId: v.id("conversations"),
+        userId: v.id("users"),
+    },
+    handler: async (ctx, args) => {
+        const caller = await getCurrentUser(ctx);
+        if (!caller) throw new Error("Unauthorized");
+
+        const isMember = await checkMembership(ctx, args.conversationId, caller._id);
+        if (!isMember) throw new Error("Not a member");
+
+        const alreadyMember = await checkMembership(ctx, args.conversationId, args.userId);
+        if (alreadyMember) return; // Already in group
+
+        await ctx.db.insert("conversationMembers", {
+            conversationId: args.conversationId,
+            userId: args.userId,
+            lastReadTime: 0,
+            role: "member",
+        });
+
+        const targetUser = await ctx.db.get(args.userId);
+        await insertSystemMessage(
+            ctx, args.conversationId,
+            `${targetUser?.name ?? "Someone"} was added by ${caller.name}`,
+            caller._id
+        );
+    },
+});
+
+// ── Leave a group ─────────────────────────────────────────────────────────────
+export const leaveGroup = mutation({
+    args: { conversationId: v.id("conversations") },
+    handler: async (ctx, args) => {
+        const user = await getCurrentUser(ctx);
+        if (!user) throw new Error("Unauthorized");
+
+        const conversation = await ctx.db.get(args.conversationId);
+        if (!conversation || !conversation.isGroup) throw new Error("Not a group");
+
+        // Emit system message BEFORE removing membership
+        await insertSystemMessage(ctx, args.conversationId, `${user.name} left the group`, user._id);
+
+        const membership = await ctx.db
+            .query("conversationMembers")
+            .withIndex("by_userId", (q: any) => q.eq("userId", user._id))
+            .filter((q: any) => q.eq(q.field("conversationId"), args.conversationId))
+            .unique();
+
+        if (membership) await ctx.db.delete(membership._id);
+
+        const remainingMembers = await ctx.db
+            .query("conversationMembers")
+            .withIndex("by_conversationId", (q: any) => q.eq("conversationId", args.conversationId))
+            .collect();
+
+        if (remainingMembers.length === 0) {
+            await ctx.db.delete(args.conversationId);
+        }
+    },
+});
+
+// ── Generate or retrieve an invite code for a group ──────────────────────────
+export const generateInviteCode = mutation({
+    args: { conversationId: v.id("conversations") },
+    handler: async (ctx, args) => {
+        const user = await getCurrentUser(ctx);
+        if (!user) throw new Error("Unauthorized");
+
+        const isMember = await checkMembership(ctx, args.conversationId, user._id);
+        if (!isMember) throw new Error("Not a member");
+
+        const conv = await ctx.db.get(args.conversationId);
+        if (!conv) throw new Error("Conversation not found");
+
+        // Reuse existing code if one exists
+        if (conv.inviteCode) return conv.inviteCode;
+
+        const code = generateCode();
+        await ctx.db.patch(args.conversationId, { inviteCode: code });
+        return code;
+    },
+});
+
+// ── Join a group via invite code ──────────────────────────────────────────────
+export const joinByInviteCode = mutation({
+    args: { code: v.string() },
+    handler: async (ctx, args) => {
+        const user = await getCurrentUser(ctx);
+        if (!user) throw new Error("Unauthorized");
+
+        const conversations = await ctx.db.query("conversations").collect();
+        const conv = conversations.find(c => c.inviteCode === args.code.toUpperCase());
+        if (!conv) throw new Error("Invalid invite code");
+
+        const alreadyMember = await checkMembership(ctx, conv._id, user._id);
+        if (alreadyMember) return conv._id; // Already in group
+
+        await ctx.db.insert("conversationMembers", {
+            conversationId: conv._id,
+            userId: user._id,
+            lastReadTime: Date.now(),
+            role: "member",
+        });
+
+        await insertSystemMessage(ctx, conv._id, `${user.name} joined via invite link`, user._id);
+
+        return conv._id;
+    },
+});
+
+// ── Get group details with full member list ───────────────────────────────────
+export const getGroupDetails = query({
+    args: { conversationId: v.id("conversations") },
+    handler: async (ctx, args) => {
+        const user = await getCurrentUser(ctx);
+        if (!user) return null;
+
+        const conv = await ctx.db.get(args.conversationId);
+        if (!conv || !conv.isGroup) return null;
+
+        const isMember = await checkMembership(ctx, args.conversationId, user._id);
+        if (!isMember) return null;
+
+        const memberships = await ctx.db
+            .query("conversationMembers")
+            .withIndex("by_conversationId", (q: any) => q.eq("conversationId", args.conversationId))
+            .collect();
+
+        const members = await Promise.all(
+            memberships.map(async (m) => {
+                const u = await ctx.db.get(m.userId);
+                return u ? { ...u, role: m.role ?? "member", isMe: u._id === user._id } : null;
+            })
+        );
+
+        return {
+            ...conv,
+            members: members.filter(Boolean),
+            isAdmin: conv.creatorId === user._id,
+        };
+    },
+});
+
+// ── List all conversations ────────────────────────────────────────────────────
 export const getConversations = query({
     args: {},
     handler: async (ctx) => {
@@ -105,7 +270,7 @@ export const getConversations = query({
 
         const memberships = await ctx.db
             .query("conversationMembers")
-            .withIndex("by_userId", (q) => q.eq("userId", user._id))
+            .withIndex("by_userId", (q: any) => q.eq("userId", user._id))
             .collect();
 
         const results = await Promise.all(
@@ -115,36 +280,31 @@ export const getConversations = query({
 
                 const otherMembers = await ctx.db
                     .query("conversationMembers")
-                    .withIndex("by_conversationId", (q) => q.eq("conversationId", conv._id))
-                    .filter((q) => q.neq(q.field("userId"), user._id))
+                    .withIndex("by_conversationId", (q: any) => q.eq("conversationId", conv._id))
+                    .filter((q: any) => q.neq(q.field("userId"), user._id))
                     .collect();
 
-                const otherMemberUsers = await Promise.all(
-                    otherMembers.map(m => ctx.db.get(m.userId))
-                );
+                const otherMemberUsers = await Promise.all(otherMembers.map(m => ctx.db.get(m.userId)));
 
                 let lastMessage = null;
-                if (conv.lastMessageId) {
-                    lastMessage = await ctx.db.get(conv.lastMessageId);
-                }
+                if (conv.lastMessageId) lastMessage = await ctx.db.get(conv.lastMessageId);
 
-                // Count unread messages (excluding deleted)
                 const unreadMessages = await ctx.db
                     .query("messages")
                     .withIndex("by_conversationId", (q: any) => q.eq("conversationId", conv._id))
                     .filter((q: any) => q.and(
                         q.gt(q.field("_creationTime"), membership.lastReadTime),
-                        q.eq(q.field("deleted"), false)
+                        q.eq(q.field("deleted"), false),
+                        q.eq(q.field("type"), "text")  // Don't count system messages as unread
                     ))
                     .collect();
-                const unreadCount = unreadMessages.length;
 
                 return {
                     ...conv,
                     otherUser: otherMemberUsers[0],
                     otherUsers: otherMemberUsers,
                     lastMessage,
-                    unreadCount,
+                    unreadCount: unreadMessages.length,
                 };
             })
         );
@@ -155,6 +315,7 @@ export const getConversations = query({
     },
 });
 
+// ── Mark conversation as read ─────────────────────────────────────────────────
 export const markAsRead = mutation({
     args: { conversationId: v.id("conversations") },
     handler: async (ctx, args) => {
@@ -163,57 +324,20 @@ export const markAsRead = mutation({
 
         const membership = await ctx.db
             .query("conversationMembers")
-            .withIndex("by_userId", (q) => q.eq("userId", user._id))
-            .filter((q) => q.eq(q.field("conversationId"), args.conversationId))
+            .withIndex("by_userId", (q: any) => q.eq("userId", user._id))
+            .filter((q: any) => q.eq(q.field("conversationId"), args.conversationId))
             .unique();
 
         if (membership) {
-            await ctx.db.patch(membership._id, {
-                lastReadTime: Date.now(),
-            });
+            await ctx.db.patch(membership._id, { lastReadTime: Date.now() });
         }
     },
 });
 
-export const leaveGroup = mutation({
-    args: { conversationId: v.id("conversations") },
-    handler: async (ctx, args) => {
-        const user = await getCurrentUser(ctx);
-        if (!user) throw new Error("Unauthorized");
-
-        const conversation = await ctx.db.get(args.conversationId);
-        if (!conversation || !conversation.isGroup) {
-            throw new Error("Conversation not found or not a group");
-        }
-
-        const membership = await ctx.db
-            .query("conversationMembers")
-            .withIndex("by_userId", (q) => q.eq("userId", user._id))
-            .filter((q) => q.eq(q.field("conversationId"), args.conversationId))
-            .unique();
-
-        if (membership) {
-            await ctx.db.delete(membership._id);
-        }
-
-        // If no members left, delete conversation (optional)
-        const remainingMembers = await ctx.db
-            .query("conversationMembers")
-            .withIndex("by_conversationId", (q) => q.eq("conversationId", args.conversationId))
-            .collect();
-
-        if (remainingMembers.length === 0) {
-            // Cleanup messages and reactions as well in a real app
-            await ctx.db.delete(args.conversationId);
-        }
-    },
-});
-
-// ── Shared helper functions (not exported as Convex mutations/queries) ─────────
+// ── Shared helper functions ───────────────────────────────────────────────────
 export async function getCurrentUser(ctx: any) {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
-
     return await ctx.db
         .query("users")
         .withIndex("by_clerkId", (q: any) => q.eq("clerkId", identity.subject))

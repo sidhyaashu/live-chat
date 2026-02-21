@@ -10,6 +10,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { ChevronLeft, Users, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import { Id } from '@/convex/_generated/dataModel';
+import { GroupManagementDrawer } from '@/components/chat/GroupManagementDrawer';
 
 export default function ChatPage() {
     const params = useParams();
@@ -23,6 +24,8 @@ export default function ChatPage() {
         messageIds: messages?.map(m => m._id) ?? [],
     });
     const markAsRead = useMutation(api.conversations.markAsRead);
+    const me = useQuery(api.users.getMe);
+    const [showGroupManagement, setShowGroupManagement] = useState(false);
 
     const conversation = conversations?.find(c => c._id === conversationId);
 
@@ -124,40 +127,52 @@ export default function ChatPage() {
                     >
                         <ChevronLeft className="h-6 w-6" />
                     </button>
-                    {conversation.isGroup ? (
-                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                            <Users className="h-6 w-6 text-primary" />
+                    <button
+                        onClick={() => conversation.isGroup && setShowGroupManagement(true)}
+                        className={`flex items-center gap-3 transition-opacity ${conversation.isGroup ? 'hover:opacity-80 active:opacity-60 cursor-pointer' : ''}`}
+                    >
+                        {conversation.isGroup ? (
+                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
+                                {conversation.imageUrl ? (
+                                    <img src={conversation.imageUrl} alt={conversation.name || 'Group'} className="h-full w-full object-cover" />
+                                ) : (
+                                    <Users className="h-6 w-6 text-primary" />
+                                )}
+                            </div>
+                        ) : (
+                            <div className="relative shrink-0">
+                                <img
+                                    src={otherUser?.imageUrl || '/placeholder-user.png'}
+                                    alt={otherUser?.name || 'User'}
+                                    className="h-10 w-10 rounded-full object-cover"
+                                />
+                                {otherUser?.isOnline && (
+                                    <span className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 border-2 border-white dark:border-zinc-900 rounded-full" />
+                                )}
+                            </div>
+                        )}
+                        <div className="text-left">
+                            <div className="font-bold leading-tight">
+                                {conversation.isGroup ? (conversation.name || 'Group Chat') : (otherUser?.name || 'User')}
+                            </div>
+                            <div className="text-[10px] text-zinc-500 flex items-center gap-1 uppercase font-semibold tracking-wider">
+                                {!conversation.isGroup && (
+                                    otherUser?.isOnline
+                                        ? <><span className="h-1.5 w-1.5 bg-green-500 rounded-full inline-block" /> Online</>
+                                        : 'Offline'
+                                )}
+                                {conversation.isGroup && `${(conversation.otherUsers?.length || 0) + 1} members`}
+                            </div>
                         </div>
-                    ) : (
-                        <div className="relative shrink-0">
-                            <img
-                                src={otherUser?.imageUrl || '/placeholder-user.png'}
-                                alt={otherUser?.name || 'User'}
-                                className="h-10 w-10 rounded-full object-cover"
-                            />
-                            {otherUser?.isOnline && (
-                                <span className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 border-2 border-white dark:border-zinc-900 rounded-full" />
-                            )}
-                        </div>
-                    )}
-                    <div>
-                        <div className="font-bold">
-                            {conversation.isGroup ? (conversation.name || 'Group Chat') : (otherUser?.name || 'User')}
-                        </div>
-                        <div className="text-xs text-zinc-500 flex items-center gap-1">
-                            {!conversation.isGroup && (
-                                otherUser?.isOnline
-                                    ? <><span className="h-2 w-2 bg-green-500 rounded-full inline-block" /> Online</>
-                                    : 'Offline'
-                            )}
-                            {conversation.isGroup && `${(conversation.otherUsers?.length || 0) + 1} members`}
-                        </div>
-                    </div>
+                    </button>
                 </div>
-                {/* Group leave button */}
-                {conversation.isGroup && (
-                    <LeaveGroupButton conversationId={conversationId} />
-                )}
+                {/* Profile Link (Desktop Shortcut) */}
+                <Link
+                    href="/profile"
+                    className="hidden md:flex text-xs text-zinc-400 hover:text-primary transition"
+                >
+                    My Profile
+                </Link>
             </div>
 
             {/* Messages */}
@@ -183,12 +198,16 @@ export default function ChatPage() {
                         key={msg._id}
                         id={msg._id}
                         content={msg.content}
+                        senderId={msg.senderId}
                         senderName={msg.senderName}
                         senderImage={msg.senderImage}
                         isMe={msg.isMe}
-                        timestamp={msg._creationTime}
-                        isDeleted={msg.deleted}
+                        type={msg.type || 'text'}
+                        deleted={msg.deleted}
+                        createdAt={msg._creationTime}
                         reactions={reactions?.[msg._id] || []}
+                        currentUserId={me?._id as Id<"users">}
+                        isGroup={conversation.isGroup}
                     />
                 ))}
 
@@ -226,36 +245,16 @@ export default function ChatPage() {
 
             {/* Input */}
             <MessageInput conversationId={conversationId} />
+
+            {/* Group Management Drawer */}
+            {conversation.isGroup && (
+                <GroupManagementDrawer
+                    conversationId={conversationId}
+                    open={showGroupManagement}
+                    onClose={() => setShowGroupManagement(false)}
+                />
+            )}
         </ChatLayout>
     );
 }
 
-// ── Leave Group Button ─────────────────────────────────────────────────────────
-function LeaveGroupButton({ conversationId }: { conversationId: Id<"conversations"> }) {
-    const leaveGroup = useMutation(api.conversations.leaveGroup);
-    const router = useRouter();
-    const [loading, setLoading] = useState(false);
-
-    const handleLeave = async () => {
-        if (!confirm('Are you sure you want to leave this group?')) return;
-        setLoading(true);
-        try {
-            await leaveGroup({ conversationId });
-            router.push('/');
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <button
-            onClick={handleLeave}
-            disabled={loading}
-            className="text-xs text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
-        >
-            {loading ? 'Leaving...' : 'Leave Group'}
-        </button>
-    );
-}

@@ -12,15 +12,19 @@ export default defineSchema({
     }).index("by_clerkId", ["clerkId"]),
 
     conversations: defineTable({
-        name: v.optional(v.string()), // For group chats
+        name: v.optional(v.string()),         // Group chat name
         isGroup: v.boolean(),
         lastMessageId: v.optional(v.id("messages")),
+        imageUrl: v.optional(v.string()),     // Group avatar image URL
+        inviteCode: v.optional(v.string()),   // Short code for invite links
+        creatorId: v.optional(v.id("users")), // Original group creator
     }),
 
     conversationMembers: defineTable({
         conversationId: v.id("conversations"),
         userId: v.id("users"),
         lastReadTime: v.number(),
+        role: v.optional(v.union(v.literal("admin"), v.literal("member"))),
     }).index("by_conversationId", ["conversationId"])
         .index("by_userId", ["userId"]),
 
